@@ -1,0 +1,133 @@
+ls
+A = matrix
+A = matrix ()
+A = matrix (
+c(0.018, 0.035, 0.031, 0.008, 0.018, 0.002, 0.112, 0.064, 0.032, 0.069, 0.001, 0.066, 0.094, 0.032, 0.084, 0.001, 0.018, 0.019, 0.010, 0.051, 0.001, 0.029, 0.032, 0.043, 0.130)
+nrow = 5
+nrow = 5,
+A = matrix (
+c(0.018, 0.035, 0.031, 0.008, 0.018, 0.002, 0.112, 0.064, 0.032, 0.069, 0.001, 0.066, 0.094, 0.032, 0.084, 0.001, 0.018, 0.019, 0.010, 0.051, 0.001, 0.029, 0.032, 0.043, 0.130)
+nrow = 5,
+A = matrix (
+c(0.018, 0.035, 0.031, 0.008, 0.018, 0.002, 0.112, 0.064, 0.032, 0.069, 0.001, 0.066, 0.094, 0.032, 0.084, 0.001, 0.018, 0.019, 0.010, 0.051, 0.001, 0.029, 0.032, 0.043, 0.130),
+nrow = 5,
+ncol = 5,
+byrow = TRUE)
+A
+sum(A[1,])
+v = 1:5
+v
+MF[v] = sum(A[v,])
+MF = rep(0,5)
+MF[v] = sum(A[v,])
+MF
+MF[v] = sum(A[1,])
+MF
+MF[,v] = sum(A[1,])
+MF[v] = sum(A)
+MF
+MF[v] = sum(A[,v])
+MF
+sum(A[,v])
+colSums(A)
+MF = rowSums(A)
+MF
+MS = colSums(A)
+MS
+A[,v]
+A
+A[v,]
+m = matrix()
+M
+m
+m[2,] = c(1,2,2)
+m = matrix(nrow = 5, ncol = 5)
+m[2,] = c(1,2,2)
+m[2,] = c(1,2,2,4,3)
+m
+m[1,] = sumRows(A)
+m[1,] = rowSums(A)
+m
+i = v
+o
+i
+m[i,v] = A[i,v]/MF[v]
+m
+A[1,1]/MF(1)
+A[1,1]/MF[1]
+A[1,2]/MF[1]
+A[1,2]/MF[2]
+A[2,1]/MF[2]
+m[i,v] = A[i,v]/MF[i]
+m
+m[i,v] = A[i,v]/t(MF)[i]
+m
+m = A/t(MF)
+m[i,v] = A[i,v]/t(MF)[v]
+m
+m = t(t(A)/MF)
+m
+thetas = c(0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1)
+thetas
+fiftysevens = (factorial(100)/(factorial(57)*factorial(43)))*thetas^57*(1-thetas)^43
+fiftysevens
+plot(thetas,fiftysevens)
+plot(thetas,fiftysevens,b)
+plot(thetas,fiftysevens,"b")
+posterior = fiftysevens/(sum(fiftysevens))
+posterior
+sum(posterior)
+plot(thetas,posterior,"b")
+thetas = 0:1:.001
+thetas = seq(0,1,.00000001)
+thetas
+thetas = seq(0,1,.000001)
+thetas
+thetas = seq(0,1,.00001)
+thetas
+fifsev = (factorial(100)/(factorial(57)*factorial(43)))*thetas^57*(1-thetas)^43
+fifsev
+i = 0:43
+i
+terms = (43,i)*(-1)^i/(58+i)
+terms = choose(43,i)*(-1)^i/(58+i)
+terms
+test = c(0,.5,1)
+test^57*(1-test)^43/(sum(terms*test^(58+i)*(-1)^i))
+.5^57*(1-.5)^43/(sum(terms*.5^(58+i)*(-1)^i))
+test[1]
+test[2]
+testing = rep(0,3)
+size(thetas)
+length(thetas)
+i = 1:3
+i = 0:43
+.5^57*(1-.5)^43/(sum(terms*.5^(58+i)))
+news = 1:10
+news
+for(i in news) {}
+for(i in news) {
+i^2
+}
+n<-4444
+n
+ls
+getwd
+ls()
+getwd()
+setwd("Desktop")
+getwd()
+setwd("Peter stuff")
+getwd()
+ls()
+dat=read.table('dat_for_mcsel.txt',header=TRUE)
+all.pars = mcmc.adam.peak.v1(dat, 5000)
+all.pars = mcselpeak_ipod(dat, 5000)
+dat
+all.pars = mcmc.adam.peak.v1(dat, 5000)
+mcselpeak_ipod.R
+all.pars
+all.pars = mcmc.adam.peak.v1(dat, 5000)
+dat=read.table('dat_for_mcsel.txt',header=TRUE)
+all.pars = mcmc.adam.peak.v1(dat, 5000)
+source("mcselpeak_ipod.R")
