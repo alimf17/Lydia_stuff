@@ -4,6 +4,8 @@
 # source("../mcselpeak/mcselpeak.R")
 # all.pars = mcmc.adam.peak.v1(test.data, 5000)
 
+#Comment to check that git works
+
 # pull in prerequisites
 #library("mvtnorm")
 library(DierckxSpline)
