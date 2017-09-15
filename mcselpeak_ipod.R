@@ -16,6 +16,7 @@ library(DierckxSpline)
 GENOME.LENGTH = 4000
 #GENOME.LENGTH = 1000
 NUM.MOVE.TYPES = 13
+READING.FRAME.LENGTH = 15
 
 ## parameters controlling move sizes -- tune for optimal acceptance
 peak.move.sigma = 10
@@ -55,8 +56,10 @@ peak.sigma.size = 0.1
 ##Vector of bases to choose from
 bases.vector = c("A","T","G","C","R","Y","W","S","M","K","B","V","H","D","N")
 
-peak.height.min = 0.4
-log.peak.height.prior.int = log(1-pgamma(peak.height.min, 1, scale=1))
+
+
+#peak.height.min = 0.4
+#log.peak.height.prior.int = log(1-pgamma(peak.height.min, 1, scale=1))
 
 #Not tracking peak number anymore, instead switching to TF number
 #npeak.lambda=3
@@ -72,7 +75,7 @@ tf.lamda = 100
 # I *know* this is a bad model -- just need to implement the sampler first and then
 # i can improve on it
 
-mcmc.adam.peak.v1 = function(input.data, n.iter, pars.init=NULL, sparse=0) {
+mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, sparse=0) {
   # do mcmc to find locations of one or more peaks
   # before being passed to this function, data should be regularized to have a mean 0 
   #  and sd of 1
@@ -80,6 +83,7 @@ mcmc.adam.peak.v1 = function(input.data, n.iter, pars.init=NULL, sparse=0) {
   #  Failure to adhere to these requirements may make your research explode
 
   # input.data must contain ***
+  # input.seq is the name of the fasta file containing the sequence that lines up with the waveform
   # n.iter is the number of iterations to do
   # sparse is the number of conformations between each saved conformation
 
@@ -237,6 +241,58 @@ mcmc.adam.peak.v1 = function(input.data, n.iter, pars.init=NULL, sparse=0) {
 # (alimf) Leaving functions in even if I do not need them per se. Unneeded functions will be marked with a comment
 # on top specifying "Not necessary." Prior functions that will be used will be marked "in use"
 
+#this is the function to sanitize and define the sequence while lining it up to the data
+#Note that if a FASTA file contains multiple sequences, this function will ignore the the sequences that come after
+#the first one
+#Note also that this requires file extension fasta
+sanitize.seq = function(input.seq) {
+
+	split.file.name = unlist(strsplit(input.seq,'\\.'))
+	if(!(identical(split.file.name[2],"fasta"))){
+		stop('This file is not a fasta file')
+	}
+
+	con = file(input.seq, open="r")
+	raw.read = readLines(con, n = 2)
+
+	raw.sequence = raw.read[2]
+
+	sequence.vector =  unlist(strsplit(raw.sequence,''))
+
+	is.acceptable.bp = sequence.vector %in% c('A','T','G','C')
+
+	if(!all(is.acceptable.bp)){
+		stop('Sequences must only have base pairs A, T,G,C. No other base pairs are allowed.')
+	}
+
+	#This circularizes the genome. We will edit as neccesary
+	sequence.vector = c(sequence.vector, sequence.vector[1, READING.FRAME.LENGTH])
+
+	return(sequence.vector)
+
+}
+
+
+#This is the function that generates the peak waveform we need to work with
+
+generate.waveform = function(this.locs, this.sequence, all.pars, this.mu) {
+	
+	frame.matrix = this.sequence[1:(length(this.sequence)-READING.FRAME.LENGTH)]
+	for(i %in% 1:READING.FRAME.LENGTH-1){
+		
+		frame.matrix = cbind(frame.matrix,this.sequence[i+1:(length(this.sequence)-READING.FRAME.LENGTH+i+1)]
+	
+	}
+	
+	mag.pars = all.pars
+
+	energy =  mag.pars$deltaG
+
+	
+	
+
+	return(this.mu)
+}
 
 #not necessary
 d.n.peak.prior = function(npeaks) {
@@ -457,6 +513,14 @@ calc.sd.vals = function(all.homologies, all.pars, probedists, probe.samestrands)
   return(sd.vec)
 
 }
+
+#Generate the waveform from the proposed parameters#
+generate.wave = function(all.pars,parent.sequence) {
+
+
+
+}
+
 
 
 ########################## DIFFERENT MONTE CARLO MOVE TYPES #########################
