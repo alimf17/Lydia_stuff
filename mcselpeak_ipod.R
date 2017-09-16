@@ -277,19 +277,39 @@ sanitize.seq = function(input.seq) {
 
 generate.waveform = function(this.locs, this.sequence, all.pars, this.mu) {
 	
+	#frame.matrix generates the list of sequence frame	
 	frame.matrix = this.sequence[1:(length(this.sequence)-READING.FRAME.LENGTH)]
-	for(i %in% 1:READING.FRAME.LENGTH-1){
+	for(i %in% 2:READING.FRAME.LENGTH){
 		
-		frame.matrix = cbind(frame.matrix,this.sequence[i+1:(length(this.sequence)-READING.FRAME.LENGTH+i+1)]
+		frame.matrix = cbind(frame.matrix,this.sequence[i:(length(this.sequence)-READING.FRAME.LENGTH+i)]
 	
 	}
 	
 	mag.pars = all.pars
-
-	energy =  mag.pars$deltaG
-
 	
+	#Unlists the sequence, splits the individual strings in the resulting vector.
+	#This makes a list. This new list is unlisted, which makes a vector of characters
+	#We need this vector to be a matrix with 15 columns, and each row contains the current sequnce for the TF.
+	#But, r fills matrices down columns, so we make the matrix with reading frames going down, then transpose
+	sequence.motifs = t(matrix(unlist(strsplit(unlist(mag.pars$motif),"")), nrows = READING.FRAME.LENGTH))
 	
+		
+
+	for(i %in% 1:(length(this.sequence)-READING.FRAME.LENGTH)){
+	
+		energy = unlist(all.pars$deltaG)
+		
+		mismatch = unlist(all.pars$mismatch)
+		
+		is.mismatch = (sequence.motifs != frame.matrix[i,])
+		
+		#Exploits TRUE == 1 to get number of mismatches for each frame comparing to sequence motif
+		number.mismatches = rowSums(is.mismatch)
+
+		energy = energy - number.mismatches*mismatch
+		
+
+	}	
 
 	return(this.mu)
 }
