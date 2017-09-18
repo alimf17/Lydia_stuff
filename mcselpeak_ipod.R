@@ -17,6 +17,8 @@ GENOME.LENGTH = 4000
 #GENOME.LENGTH = 1000
 NUM.MOVE.TYPES = 13
 READING.FRAME.LENGTH = 15
+R = 1.98858775 #Uses kcal/(K*mol)
+temperature = 298 #Kelvin
 
 ## parameters controlling move sizes -- tune for optimal acceptance
 peak.move.sigma = 10
@@ -266,7 +268,7 @@ sanitize.seq = function(input.seq) {
 	}
 
 	#This circularizes the genome. We will edit as neccesary
-	sequence.vector = c(sequence.vector, sequence.vector[1, READING.FRAME.LENGTH])
+	sequence.vector = c(sequence.vector, sequence.vector[1, READING.FRAME.LENGTH-1])
 
 	return(sequence.vector)
 
@@ -275,13 +277,13 @@ sanitize.seq = function(input.seq) {
 
 #This is the function that generates the peak waveform we need to work with
 
-generate.waveform = function(this.locs, this.sequence, all.pars, this.mu) {
+generate.waveform = function(this.locs, this.sequence, all.pars, this.mu, this.locs) {
 	
 	#frame.matrix generates the list of sequence frame	
-	frame.matrix = this.sequence[1:(length(this.sequence)-READING.FRAME.LENGTH)]
+	frame.matrix = this.sequence[1:(length(this.sequence)-(READING.FRAME.LENGTH-1))]
 	for(i %in% 2:READING.FRAME.LENGTH){
 		
-		frame.matrix = cbind(frame.matrix,this.sequence[i:(length(this.sequence)-READING.FRAME.LENGTH+i)]
+		frame.matrix = cbind(frame.matrix,this.sequence[i:(length(this.sequence)-(READING.FRAME.LENGTH-1)+i)]
 	
 	}
 	
@@ -293,25 +295,44 @@ generate.waveform = function(this.locs, this.sequence, all.pars, this.mu) {
 	#But, r fills matrices down columns, so we make the matrix with reading frames going down, then transpose
 	sequence.motifs = t(matrix(unlist(strsplit(unlist(mag.pars$motif),"")), nrows = READING.FRAME.LENGTH))
 	
-		
 
-	for(i %in% 1:(length(this.sequence)-READING.FRAME.LENGTH)){
+        mismatch = unlist(all.pars$mismatch)
+
+        widths = unlist(all.pars$widths)
 	
+	waveform = numeric(length(this.locs))
+
+
+	#Iterates through every readin frame and determines the contribution of that reading frame to the overall wave
+	for(i %in% 1:(length(this.sequence)-READING.FRAME.LENGTH)){
+		
+		#energy is redefined every iteration because it's subtracted off thanks to mismatches
 		energy = unlist(all.pars$deltaG)
 		
-		mismatch = unlist(all.pars$mismatch)
-		
-		is.mismatch = (sequence.motifs != frame.matrix[i,])
+		is.mismatch = !match((sequence.motifs,frame.matrix[i,]))
 		
 		#Exploits TRUE == 1 to get number of mismatches for each frame comparing to sequence motif
 		number.mismatches = rowSums(is.mismatch)
 
 		energy = energy - number.mismatches*mismatch
 		
+		peak.heights = exp(energy/R*temperature)
+		
+		#This eliminates any attempt at peaks that don't really contribute to the waveform
+		peak.heights[peak.heights <= 1] = 0
 
+		peak.coeffs = peakheights*sqrt(2*pi*widths)
+		
+		location.means = (1:(length(this.sequence)-(READING.FRAME.LENGTH-1))+READING.FRAME.LENGTH:length(this.sequence))/2
+		
+		for(j %in% 1:length(this.locs)){
+		
+			waveform[j] = waveform[j]+sum(peak.coeffs*dnorm[this.locs[j], mean = (i+7), sd = sqrt(widths)])
+
+		}
 	}	
 
-	return(this.mu)
+	return(this.mu+waveform)
 }
 
 #not necessary
