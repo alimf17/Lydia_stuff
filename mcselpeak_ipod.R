@@ -21,12 +21,11 @@ R = 1.98858775 #Uses kcal/(K*mol)
 temperature = 298 #Kelvin
 
 ## parameters controlling move sizes -- tune for optimal acceptance
-peak.move.sigma = 10
+deltaG.move.sigma = 5
+mismatch.move.sigma = 2
 #peak.move.p = 0.05
 peak.size.change.sigma = 10
-peak.height.change.sigma = 1
 mu0.change.sigma=0.05
-sigma.base.change.sigma = 0.05
 sigma.divergence.change.sigma=0.01
 nu.change.sigma=0.5
 
@@ -555,13 +554,6 @@ calc.sd.vals = function(all.homologies, all.pars, probedists, probe.samestrands)
 
 }
 
-#Generate the waveform from the proposed parameters#
-generate.wave = function(all.pars,parent.sequence) {
-
-
-
-}
-
 
 
 ########################## DIFFERENT MONTE CARLO MOVE TYPES #########################
@@ -618,6 +610,72 @@ change.peak.width = function(all.data, current.pars) {
     return(list(pars=old.pars, accepted=FALSE))
   }
 }
+
+do.deltaG.move = function(all.data,this.sequence, current.pars) {
+
+	old.pars = current.pars;
+	
+	this.deltaG = sample.int(current.pars$num.tfs, size = 1)
+	
+
+	move.dist = rnorm(1,sd = deltaG.move.sigma)
+
+	new.deltaG = current.pars$deltaG[this.deltaG] + move.dist
+
+	current.pars$deltaG[this.deltaG] = new.deltaG
+
+	current.pars$loglik = log.likelihood.main(all.data, current.pars)
+
+	if (accept.test(current.pars$loglik, old.pars$loglik)) {
+    		return(list(pars = current.pars, accepted = TRUE))
+  	} else {
+    		return(list(pars=old.pars, accepted=FALSE))
+  	}
+	
+}
+
+do.mismatch.move = function(all.data, this.sequence, current.pars) {
+
+        old.pars = current.pars;
+
+        this.mismatch = sample.int(current.pars$num.tfs, size = 1)
+
+
+        move.dist = rnorm(1,sd = mismatch.move.sigma)
+
+        new.mismatch = current.pars$deltaG[this.mismatch] + move.dist
+
+        current.pars$mismatch[this.mistmatch] = new.mismatch
+
+        current.pars$loglik = log.likelihood.main(all.data, current.pars)
+
+        if (accept.test(current.pars$loglik, old.pars$loglik)) {
+                return(list(pars = current.pars, accepted = TRUE))
+        } else {
+                return(list(pars=old.pars, accepted=FALSE))
+        }
+
+}
+
+do.motif.move = function(all.data, this.sequence, current.pars) {
+
+        old.pars = current.pars;
+
+        this.motif = sample.int(current.pars$num.tfs, size = 1)
+
+        current.pars$motif[this.motif] = same(bases.vector, size = 1)
+
+        current.pars$loglik = log.likelihood.main(all.data, current.pars)
+
+        if (accept.test(current.pars$loglik, old.pars$loglik)) {
+                return(list(pars = current.pars, accepted = TRUE))
+        } else {
+                return(list(pars=old.pars, accepted=FALSE))
+        }
+
+}
+
+
 
 find.new.trial.loc = function(target.quantile, dens.spline.fit, dens.spline.norm, tol=1e-5, maxiter=1000) {
   # find the location corresponding to a given quantile in the spline fit in
