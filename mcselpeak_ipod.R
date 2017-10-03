@@ -26,22 +26,10 @@ mismatch.move.sigma = 2
 #peak.move.p = 0.05
 peak.size.change.sigma = 10
 mu0.change.sigma=0.05
-sigma.divergence.change.sigma=0.01
 nu.change.sigma=0.5
 
-peaksplit.delta.sd = 100
-peaksplit.epsilon.sd = .1
-peaksplit.gamma.sd = 0.1
-
-## parameters controlling the prior distributions
-#min.peak.sigma = 30
-#max.peak.sigma = 250
-#peak.sigma.prior.int = log(max.peak.sigma) - log(min.peak.sigma)
 
 
-## Unneeded, given that we will be instead tracking binding energy (alimf)
-height.prior.shape = 5
-height.prior.scale=1
 
 ##Priors for binding energy 
 energy.prior.shape = 1.5
@@ -59,11 +47,6 @@ bases.vector = c("A","T","G","C","R","Y","W","S","M","K","B","V","H","D","N")
 
 
 
-#peak.height.min = 0.4
-#log.peak.height.prior.int = log(1-pgamma(peak.height.min, 1, scale=1))
-
-#Not tracking peak number anymore, instead switching to TF number
-#npeak.lambda=3
 
 #In first implementation, tf.lamda will stand for static number of TFs.
 #In later implementations, this will be shifted to a Poisson distribution with 
@@ -106,7 +89,6 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
 
   probelocs = input.data$loc
   probescores = input.data$data
-  probe.homologies = input.data$homology
 
 
   # set up an approximation of the overall data
@@ -123,25 +105,15 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
 
     ## step id
     pars.init['step'] = 0
-
-    ## for the peaks:
-    pars.init['n.peak'] = 10
-
-    ### peak centers
-    # we pick these randomly rather than using crude peak finding -- this slows convergence
-    #  but also helps evaluate how well converged our model is if we do multiple chains
-    #  from different starting points
-    pars.init[['peak.mus']] = sample(probelocs, size=10, prob=abs(probescores))
-    pars.init['nprobes'] = length(probelocs)
-    #pars.init['minloc'] = min(probelocs)
-    #pars.init['maxloc'] = max(probelocs)
-    #pars.init['peak.mus'] = sample(minloc:maxloc, pars.init$n.peak, replace=FALSE)
+   
+    ## number of tfs: note that this will be altered when we change over to reversible jump MCMC
+    pars.init[['tf.num']] = tf.lambda
 
     ### peak widths
-    pars.init[['peak.sigmas']] = rep(75,pars.init$n.peak)
+    pars.init[['peak.sigmas']] = rep(75,pars.init$tf.num)
 
-    ### peak heights
-    pars.init[['peak.heights']] = rep(4,pars.init$n.peak)
+    ### tf binding energies
+    pars.init[['deltaG']] = rep(4,pars.init$tf.num)
 
     ## for the background
 
@@ -150,9 +122,6 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
 
     ### sigma_probe
     pars.init['sigma.base'] = 0.2
-
-    ### sigma.div.r
-    pars.init['sigma.divergence.r'] = 0.1
 
     ### nu
     pars.init['nu'] = 20
