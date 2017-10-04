@@ -304,97 +304,56 @@ generate.waveform = function(this.locs, this.sequence, all.pars, this.mu, this.l
 }
 
 #not necessary
-d.n.peak.prior = function(npeaks) {
+#d.n.peak.prior = function(npeaks) {
   # the number of peaks is poisson distributed with a fixed lambda
-  return( dpois(npeaks, lambda=npeak.lambda, log=TRUE) )
-}
+ # return( dpois(npeaks, lambda=npeak.lambda, log=TRUE) )
+#}
 
-#not necessary
-d.peak.center.prior = function(all.data, this.loc) {
-  # the centers have a uniform prior over the set of locations
-  if ((this.loc < 0) || this.loc > GENOME.LENGTH) {
-    return(NA)
-  }
-
-  return(log(1.0/GENOME.LENGTH))
-}
-
-
-#In use with minor mods
-d.peak.sigma.prior = function(this.sigma) {
-  # the sigmas have a truncated jeffreys prior -- uniform on 1/sigma
-  #  we set broad upper and lower bounds to yield a proper prior
-
-  if (this.sigma > max.peak.sigma) {
-    return(NA)
-  }
-
-  if (this.sigma < min.peak.sigma) {
-    return(NA)
-  }
-
-  return(log( (1.0/this.sigma) / peak.sigma.prior.int))
-}
-
-
-#To be modified: replace with prior for -deltaG
-d.peak.height.prior = function(this.height) {
-  # the magnitude of the peak heights  have a gamma prior, with the shape parameter chosen to prefer the peak to be substantially above background
-  # we don't care for these purposes what the sign of the peak is -- the prior is symmetric about 0
-
-  mag.height = (this.height)
-
-  if (mag.height < peak.height.min) {
-    return(NA)
-  }
-
-  return(dgamma(mag.height, height.prior.shape, scale=height.prior.scale, log=TRUE) - log.peak.height.prior.int)
-}
 
 #Using
 d.energy.prior = function(this.energy) {
 
-mag.energy = (this.energy)
+	mag.energy = (this.energy)
 
-#Log used because obscenely tiny
-return(dgamma(mag.energy, energy.prior.shape, scale = energy.prior.scale, log = TRUE))
+	#Log used because obscenely tiny
+	return(dgamma(mag.energy, energy.prior.shape, scale = energy.prior.scale, log = TRUE))
 
 }
 
 
 d.mismatch.prior = function(this.mismatch) {
 
-mag.mismatch = (this.mismatch)
+	mag.mismatch = (this.mismatch)
 
-return(dgamma(mag.mismatch, mismatch.prior.shape, scale = mismatch.prior.scale, log = TRUE))
+	return(dgamma(mag.mismatch, mismatch.prior.shape, scale = mismatch.prior.scale, log = TRUE))
 
 }
 
 d.peak.sigma.prior = function(this.sigma) {
 
-mag.sigma = (this.sigma)
+	mag.sigma = (this.sigma)
 
-return(dgamma(mag.sigma, peak.sigma.shape, scale = peak.sigma.scale, log = TRUE))
+	return(dgamma(mag.sigma, peak.sigma.shape, scale = peak.sigma.scale, log = TRUE))
 
 }
 
 match = function(data, template) {
 
-if(data = "A") {
-return(template %in% c("A","R","W","M","V","H","D","N"))
-}
-else if(data = "T") {
-return(template %in% c("T","Y","W","K","B","H","D","N"))
-}
-else if(data = "G") {
-return(template %in% c("G","R","S","K","B","V","D","N"))
-}
-else if(data = "C") {
-return(template %in% c("C","Y","S","M","B","V","H","N"))
-}
-else{
-return(false)
-}
+	if(data == "A") {
+		return(template %in% c("A","R","W","M","V","H","D","N"))
+	}
+	else if(data == "T") {
+		return(template %in% c("T","Y","W","K","B","H","D","N"))
+	}
+	else if(data == "G") {
+		return(template %in% c("G","R","S","K","B","V","D","N"))
+	}
+	else if(data == "C") {
+		return(template %in% c("C","Y","S","M","B","V","H","N"))
+	}
+	else{
+		return(false)
+	}
 
 }
 
@@ -412,14 +371,6 @@ d.sigma.base.prior = function(this.sigma) {
 
   return(log(1.0/this.sigma))
 }
-
-#Not being used
-d.sigma.divergence.prior = function(this.sigma.div) {
-  # the divergence slope gets a noninformative gamma prior -- this keeps it positive,
-  #  but doesn't do much else
-
-  return(dgamma(this.sigma.div, 1, scale=1, log=TRUE))
-} 
 
 d.nu.prior = function(this.nu) {
   # I need to come up with a good idea here
@@ -452,12 +403,10 @@ log.likelihood.main = function(all.data, all.pars) {
   # return the log-likelihood of the observed scores given the current parameters
   all.locs = all.data$loc
   all.scores = all.data$data
-  all.homologies = all.data$homology
 
   # calculate some needed quantities using the helper functions below
   # these are the parameters of the distribution we want to model at each probe
   all.modes = calc.mode.vals(all.locs, all.pars)
-  all.sds = calc.sd.vals(all.homologies, all.pars)
 
   # standardize the current values so I can use the standard t distribution
   standard.scores = (all.scores - all.modes)/all.sds
@@ -511,17 +460,6 @@ calc.mode.vals = function(all.locs, all.pars) {
 
 }
 
-calc.sd.vals = function(all.homologies, all.pars, probedists, probe.samestrands) {
-  # given the current parameters and the homologies, calculate the 
-  #  sd of the background distribution at each probe
-
-  sd.vec = rep(all.pars$sigma.base, length(all.homologies))
-  divergence = 1 - all.homologies
-  sd.vec = sd.vec + all.pars$sigma.divergence.r * divergence
-
-  return(sd.vec)
-
-}
 
 
 
