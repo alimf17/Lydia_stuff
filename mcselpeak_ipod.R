@@ -23,11 +23,10 @@ temperature = 298 #Kelvin
 ## parameters controlling move sizes -- tune for optimal acceptance
 deltaG.move.sigma = 5
 mismatch.move.sigma = 2
-#peak.move.p = 0.05
 peak.size.change.sigma = 10
 mu0.change.sigma=0.05
 nu.change.sigma=0.5
-
+sigma.base.change.sigma = 0.01
 
 
 
@@ -303,11 +302,6 @@ generate.waveform = function(this.locs, this.sequence, all.pars, this.mu, this.l
 	return(this.mu+waveform)
 }
 
-#not necessary
-#d.n.peak.prior = function(npeaks) {
-  # the number of peaks is poisson distributed with a fixed lambda
- # return( dpois(npeaks, lambda=npeak.lambda, log=TRUE) )
-#}
 
 
 #Using
@@ -425,86 +419,17 @@ log.likelihood.main = function(all.data, all.pars) {
   return(d.prior(all.data, all.pars) + lik.sum)
 }
 
-calc.mode.vals = function(all.locs, all.pars) {
-  # calculate the expected value of all probe-level scores based on the current distribution
-
-  mode.vals = rep(all.pars$mu0, length(all.locs))
-
-  peak.mus = all.pars$peak.mus
-  peak.sigmas = all.pars$peak.sigmas
-  peak.heights = all.pars$peak.heights
-
-  if (all.pars$n.peak > 0) {
-    for (i in 1:all.pars$n.peak) {
-      this.center = peak.mus[i]
-      this.width = peak.sigmas[i]
-      this.height = peak.heights[i]
-      
-      dists.a = abs(this.center-all.locs)
-      if (this.center > (GENOME.LENGTH/2)) {
-        dists.b = abs((this.center-GENOME.LENGTH)-all.locs)
-      } else {
-        dists.b = abs((this.center+GENOME.LENGTH)-all.locs)
-      }
-      all.dists = pmin(dists.a, dists.b)
-
-      normby = dnorm(0, mean=0, sd=this.width)
-      test.dens = dnorm(all.dists, mean=0, sd=this.width)
-      densities.thispeak = this.height * dnorm(all.dists, mean=0, sd=this.width) / normby
-      
-      mode.vals = mode.vals + densities.thispeak
-    }
-  }
-
-  return(mode.vals)
-
-}
 
 
 
 
 ########################## DIFFERENT MONTE CARLO MOVE TYPES #########################
 
-do.peak.move = function(all.data, current.pars) {
-  # attempt a peak move
-
-  old.pars = current.pars
-
-  if (current.pars$n.peak == 0) {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-
-  this.peak = sample.int(current.pars$n.peak, size=1)
-  move.dist = rnorm(1,sd=peak.move.sigma)
-  #1-2*(sample(2,size=1, replace=TRUE) -1) * rnbinom(1,size=1,prob=peak.move.p)
-  new.loc = current.pars$peak.mus[this.peak] + move.dist
-
-  # wrap the new peak position around the origin if needed -- we use a circular genome
-  if (new.loc > GENOME.LENGTH) {
-    new.loc = new.loc - GENOME.LENGTH
-  }
-
-  if (new.loc < 0) {
-    new.loc = GENOME.LENGTH + new.loc
-  }
-
-  current.pars$peak.mus[this.peak] = new.loc
-  current.pars$loglik = log.likelihood.main(all.data, current.pars)
-
-  if (accept.test(current.pars$loglik, old.pars$loglik)) {
-    return(list(pars = current.pars, accepted = TRUE))
-  } else {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-}
 
 change.peak.width = function(all.data, current.pars) {
   # attempt  to change peak width
 
   old.pars = current.pars
-  if (current.pars$n.peak == 0) {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
 
   this.peak = sample.int(current.pars$n.peak, size=1)
   move.dist = rnorm(1,sd=peak.size.change.sigma)
@@ -570,7 +495,7 @@ do.motif.move = function(all.data, this.sequence, current.pars) {
 
         this.motif = sample.int(current.pars$num.tfs, size = 1)
 
-        current.pars$motif[this.motif] = same(bases.vector, size = 1)
+        current.pars$motif[this.motif] = sample(bases.vector, size = 1)
 
         current.pars$loglik = log.likelihood.main(all.data, current.pars)
 
@@ -582,124 +507,6 @@ do.motif.move = function(all.data, this.sequence, current.pars) {
 
 }
 
-
-
-find.new.trial.loc = function(target.quantile, dens.spline.fit, dens.spline.norm, tol=1e-5, maxiter=1000) {
-  # find the location corresponding to a given quantile in the spline fit in
-  # dens.spline.fit
-  # we act iteratively, taking smaller and smaller steps until convergence
-
-  cur.loc = 0
-  cur.int = 0
-
-  movesize = 0.5*GENOME.LENGTH
-  n.iter = 0
-  while (n.iter < maxiter) {
-    newpos = find.new.trial.loc.iter(target.quantile, cur.loc, movesize, cur.int, dens.spline.fit, dens.spline.norm)
-    cur.loc = newpos$loc
-    cur.int = newpos$int
-    if (abs(cur.int - target.quantile) < tol) {
-      return(cur.loc)
-    }
-
-    n.iter = n.iter+1
-    movesize = movesize/2.0
-  }
-
-  print("Warning: exceeded max iterations in find.new.trial.loc")
-  print(paste("Current vals are", target.quantile, cur.int))
-  return(cur.loc)
-
-}
-
-find.new.trial.loc.iter = function(target.quantile, curloc, stepsize, curint, dens.spline.fit, dens.spline.norm) {
-  # helper function to find the given quantile in a spline density
-  # try a move of the given step size and return the new location
-  # the new location is either the current location (if we overshoot)
-  # or the current location + step size if that is still not enough
-  # also return the new value of the integral up to the current point
-
-  newloc = curloc + stepsize
-  newint = curint + integral.dierckx(dens.spline.fit, from=curloc, to=newloc) / dens.spline.norm
-  if (newint > target.quantile) {
-    return(list(loc=curloc, int=curint))
-  } else {
-    return(list(loc=newloc, int=newint))
-  }
-}
-  
-  
-
-jump.peak = function(all.data, current.pars, dens.spline.fit, dens.spline.norm) {
-  # move a peak to a random position dictated by the density of the data
-  # this is an asymmetric move, so we adjust the acceptance ratio accordingly
-  # this move is designed to aid rapid mixing
-  # we randomly flip the sign as well to enable jumping to opposite-signed peaks
-  # to simplify the calculations we assume that it must jump to the site of a probe
-
-  old.pars = current.pars
-  if (current.pars$n.peak == 0) {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-
-  this.peak = sample.int(current.pars$n.peak, size=1)
-  this.peak.loc = current.pars$peak.mus[this.peak]
-  this.dens = predict.dierckx(dens.spline.fit, this.peak.loc) / dens.spline.norm
-
-  randloc = runif(1)
-
-  new.pos=find.new.trial.loc(randloc, dens.spline.fit, dens.spline.norm)
-
-  new.dens = predict.dierckx(dens.spline.fit, new.pos) / dens.spline.norm
-  dens.ratio = this.dens / new.dens
-  current.pars$peak.mus[this.peak] = new.pos
-  current.pars$peak.heights[this.peak] = (current.pars$peak.heights[this.peak]) * (1-2*(sample(2,size=1, replace=TRUE) -1))
-  current.pars$loglik = log.likelihood.main(all.data, current.pars)
-
-  if (accept.test(current.pars$loglik + log(dens.ratio), old.pars$loglik)) {
-    return(list(pars = current.pars, accepted = TRUE))
-  } else {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-}
-
-flip.peak = function(all.data, current.pars) {
-  # try to change the sign on a peak
-  old.pars = current.pars
-  if (current.pars$n.peak == 0) {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-
-  this.peak = sample.int(current.pars$n.peak, size=1)
-  current.pars$peak.heights[this.peak] = -1 * current.pars$peak.heights[this.peak]
-  current.pars$loglik = log.likelihood.main(all.data, current.pars)
-
-  if (accept.test(current.pars$loglik, old.pars$loglik)) {
-    return(list(pars = current.pars, accepted = TRUE))
-  } else {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-}
-
-rescale.peak = function(all.data, current.pars) {
-  # try to change the width of a peak
-  old.pars = current.pars
-  if (current.pars$n.peak == 0) {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-
-  this.peak = sample.int(current.pars$n.peak, size=1)
-  move.dist = rnorm(1,sd=peak.height.change.sigma)
-  current.pars$peak.heights[this.peak] = (current.pars$peak.heights[this.peak]+move.dist)
-
-  current.pars$loglik = log.likelihood.main(all.data, current.pars)
-
-  if (accept.test(current.pars$loglik, old.pars$loglik)) {
-    return(list(pars = current.pars, accepted = TRUE))
-  } else {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-}
     
 change.background.mu = function(all.data, current.pars) {
   # try to change the background mean
@@ -733,21 +540,6 @@ change.sigma.base = function(all.data, current.pars) {
   }
 }
   
-change.sigma.divergence.r = function(all.data, current.pars) {
-  # try to change the dependence of sigma on homology
-  old.pars = current.pars
-
-  move.dist = rnorm(1,sd=sigma.divergence.change.sigma)
-  current.pars$sigma.divergence.r = current.pars$sigma.divergence.r + move.dist
-
-  current.pars$loglik = log.likelihood.main(all.data, current.pars)
-
-  if (accept.test(current.pars$loglik, old.pars$loglik)) {
-    return(list(pars = current.pars, accepted = TRUE))
-  } else {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-}
   
 change.nu = function(all.data, current.pars) {
   # try to change the degrees of freedom in the background distribution
@@ -768,216 +560,6 @@ change.nu = function(all.data, current.pars) {
 #### MC moves involving adding/removing peaks
 # these are particularly complicated -- we closely follow Green1995 in terms of notation
 # and requirements to ensure appropriate behavior
-
-peak.birth = function(all.data, current.pars) {
-  # try to add a new peak at a random location
-  # the new peak's parameters are chosen randomly from the
-  #  corresponding prior distributions
-
-  old.pars= current.pars
-
-  # generate the parameters
-  new.peak.mu = runif(1, 0, GENOME.LENGTH)
-  new.peak.sigma = 1/runif(1, 1.0/max.peak.sigma, 1.0/min.peak.sigma)
-  new.peak.sign = 1-2*(sample(2,size=1, replace=TRUE) -1)
-  new.peak.height = rgamma(1,shape=height.prior.shape, scale=height.prior.scale)
-  new.peak.height = new.peak.height * new.peak.sign
-
-  # plug in the new peak
-  if (current.pars$n.peak == 0) {
-    current.pars$n.peak = 1
-    current.pars[['peak.mus']] = c(new.peak.mu)
-    current.pars[['peak.sigmas']] = c(new.peak.sigma)
-    current.pars[['peak.heights']] = c(new.peak.height)
-  } else {
-    current.pars$n.peak = current.pars$n.peak + 1
-    current.pars[['peak.mus']] = c(current.pars[['peak.mus']], new.peak.mu)
-    current.pars[['peak.sigmas']] = c(current.pars[['peak.sigmas']], new.peak.sigma)
-    current.pars[['peak.heights']] = c(current.pars[['peak.heights']], new.peak.height)
-  }
-
-  # calculate components of the acceptance ratio
-  lik.portion = log.likelihood.main(all.data, current.pars)
-  proposal.par.log.ratio = log( (1.0/GENOME.LENGTH) * ((1.0 / new.peak.sigma) / peak.sigma.prior.int) * (1.0/2.0) * dgamma(abs(new.peak.height), shape=height.prior.shape, scale=height.prior.scale))
-  proposal.log.ratio = (-1 * proposal.par.log.ratio) + log(length(all.data$loc) / current.pars$n.peak)
-  jacobian.log.ratio = 0
-  current.pars$loglik = lik.portion
-
-  #print(paste(lik.portion, proposal.par.log.ratio, proposal.log.ratio, jacobian.log.ratio, old.pars$loglik))
-
-  if (accept.test( lik.portion+proposal.log.ratio+jacobian.log.ratio, old.pars$loglik)) {
-    return(list(pars=current.pars, accepted=TRUE))
-  } else {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-
-}
-
-peak.death = function(all.data, current.pars) {
-  # try to delete a random peak
-
-  if (current.pars$n.peak == 0) {
-    return(list(pars=current.pars, accepted=FALSE))
-  }
-  
-
-  # remove all parameters of the peak
-  old.pars = current.pars
-  del.peak.id = sample.int(current.pars$n.peak, size=1)
-  current.pars$n.peak = current.pars$n.peak - 1
-
-  if (del.peak.id == 1) {
-    current.pars[['peak.mus']] = current.pars$peak.mus[2:old.pars$n.peak]
-    current.pars[['peak.sigmas']] = current.pars$peak.sigmas[2:old.pars$n.peak]
-    current.pars[['peak.heights']] = current.pars$peak.heights[2:old.pars$n.peak]
-  } else if (del.peak.id == old.pars$n.peak) {
-    current.pars[['peak.mus']] = current.pars$peak.mus[1:old.pars$n.peak-1]
-    current.pars[['peak.sigmas']] = current.pars$peak.sigmas[1:old.pars$n.peak-1]
-    current.pars[['peak.heights']] = current.pars$peak.heights[1:old.pars$n.peak-1]
-  } else {
-    current.pars[['peak.mus']] = c(current.pars$peak.mus[1:(del.peak.id-1)], current.pars$peak.mus[(del.peak.id+1):old.pars$n.peak])
-    current.pars[['peak.sigmas']] = c(current.pars$peak.sigmas[1:(del.peak.id-1)], current.pars$peak.sigmas[(del.peak.id+1):old.pars$n.peak])
-    current.pars[['peak.heights']] = c(current.pars$peak.heights[1:(del.peak.id-1)], current.pars$peak.heights[(del.peak.id+1):old.pars$n.peak])
-  }
-
-  # calculate components of the acceptance ratio
-  lik.portion = log.likelihood.main(all.data, current.pars)
-  proposal.par.log.ratio = log( (1.0/GENOME.LENGTH) * ((1.0 / old.pars[['peak.sigmas']][del.peak.id]) / peak.sigma.prior.int) * (1.0/2.0) * dgamma(abs(old.pars[['peak.heights']][del.peak.id]), shape=height.prior.shape, scale=height.prior.scale))
-  proposal.log.ratio = proposal.par.log.ratio + log( old.pars$n.peak / length(all.data$loc))
-  jacobian.log.ratio = 0
-  current.pars$loglik = lik.portion
-
-  if (accept.test( lik.portion+proposal.log.ratio+jacobian.log.ratio, old.pars$loglik)) {
-    return(list(pars=current.pars, accepted=TRUE))
-  } else {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-}
-  
-peak.merge = function(all.data, current.pars) {
-  # try to merge two randomly chosen peaks
-
-  # randomly choose two peaks, delete one, and then give the other parameters
-  #  that would immitate the combined peak if they were superimposed (or nearly so)
-
-  old.pars = current.pars
-
-  if (old.pars$n.peak < 2) {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-  old.pars = current.pars
-  del.peak.id = sample.int(current.pars$n.peak, size=1)
-  merge.peak.id = sample.int(current.pars$n.peak, size=1)
-  while (merge.peak.id == del.peak.id) {
-    merge.peak.id = sample.int(current.pars$n.peak, size=1)
-  }
-  current.pars$n.peak = current.pars$n.peak - 1
-
-  current.pars$peak.mus[merge.peak.id] = (current.pars$peak.mus[merge.peak.id] + current.pars$peak.mus[del.peak.id])/2
-  current.pars$peak.heights[merge.peak.id] = current.pars$peak.heights[merge.peak.id] + current.pars$peak.heights[del.peak.id]
-  current.pars$peak.sigmas[merge.peak.id] = sqrt(current.pars$peak.sigmas[merge.peak.id] * current.pars$peak.sigmas[del.peak.id])
-
-  if (del.peak.id == 1) {
-    current.pars[['peak.mus']] = current.pars$peak.mus[2:old.pars$n.peak]
-    current.pars[['peak.sigmas']] = current.pars$peak.sigmas[2:old.pars$n.peak]
-    current.pars[['peak.heights']] = current.pars$peak.heights[2:old.pars$n.peak]
-  } else if (del.peak.id == old.pars$n.peak) {
-    current.pars[['peak.mus']] = current.pars$peak.mus[1:old.pars$n.peak-1]
-    current.pars[['peak.sigmas']] = current.pars$peak.sigmas[1:old.pars$n.peak-1]
-    current.pars[['peak.heights']] = current.pars$peak.heights[1:old.pars$n.peak-1]
-  } else {
-    current.pars[['peak.mus']] = c(current.pars$peak.mus[1:(del.peak.id-1)], current.pars$peak.mus[(del.peak.id+1):old.pars$n.peak])
-    current.pars[['peak.sigmas']] = c(current.pars$peak.sigmas[1:(del.peak.id-1)], current.pars$peak.sigmas[(del.peak.id+1):old.pars$n.peak])
-    current.pars[['peak.heights']] = c(current.pars$peak.heights[1:(del.peak.id-1)], current.pars$peak.heights[(del.peak.id+1):old.pars$n.peak])
-  }
-
-  # calculate components of the acceptance ratio
-  lik.portion = log.likelihood.main(all.data, current.pars)
-
-  # see my notebook for the parameters going into U and the jacobian
-  delta = genome.dist(old.pars$peak.mus[merge.peak.id], old.pars$peak.mus[del.peak.id]) / 2
-  epsilon = (old.pars$peak.heights[merge.peak.id] - old.pars$peak.heights[del.peak.id])/2
-  gamma = old.pars$peak.sigmas[merge.peak.id] / current.pars$peak.sigmas[merge.peak.id]
-  #print("===")
-  #print(delta)
-  #print(epsilon)
-  #print('---')
-  u.proposal.log.ratio = dnorm(delta, sd=peaksplit.delta.sd, log=TRUE) + dnorm(epsilon, sd=peaksplit.epsilon.sd, log=TRUE) + dnorm(log(gamma), sd=peaksplit.gamma.sd, log=TRUE) 
-  proposal.log.ratio = log( current.pars$n.peak ) + u.proposal.log.ratio
-  jacobian.log.ratio = log(1/(old.pars$peak.sigmas[del.peak.id]) )
-  current.pars$loglik = lik.portion
-
-  #print(u.proposal.log.ratio)
-  #print(proposal.log.ratio)
-  #print(jacobian.log.ratio)
-  #print(lik.portion)
-  #print(old.pars$loglik)
-  
-
-  #print(lik.portion+proposal.log.ratio+jacobian.log.ratio)
-  #print(old.pars$loglik)
-  #print('xxx')
-  
-  if (accept.test( lik.portion+proposal.log.ratio+jacobian.log.ratio, old.pars$loglik)) {
-    #print('succ')
-    return(list(pars=current.pars, accepted=TRUE))
-  } else {
-    #print('fail')
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-}
-
-peak.split = function(all.data, current.pars) {
-  # try to split one randomly chosen peak into two
-  # this is the opposite of peak.merge
-
-  if (current.pars$n.peak == 0) {
-    return( list(pars=current.pars, accepted=FALSE))
-  }
-
-  old.pars = current.pars
-  split.peak.id = sample.int(current.pars$n.peak, size=1)
-  new.peak.id = current.pars$n.peak + 1
-  current.pars$n.peak = current.pars$n.peak + 1
-  new.n.peak = current.pars$n.peak
-  
-  # generate variables for mapping this direction
-  delta = rnorm(1, sd=peaksplit.delta.sd)
-  epsilon = rnorm(1, sd=peaksplit.epsilon.sd)
-  gamma = exp(rnorm(1, sd=peaksplit.gamma.sd))
-  mu0 = current.pars[['peak.mus']][split.peak.id]
-  h0 = current.pars[['peak.heights']][split.peak.id]
-  sigma0 = current.pars[['peak.sigmas']][split.peak.id]
-
-  # fill in the new parameters as needed
-  current.pars[['peak.mus']][split.peak.id] = mu0 + delta
-  current.pars[['peak.mus']][new.n.peak] = mu0 - delta
-  current.pars[['peak.heights']][split.peak.id] = (h0 + epsilon)
-  current.pars[['peak.heights']][new.n.peak] = (h0 - epsilon)
-  current.pars[['peak.sigmas']][split.peak.id] = sigma0 * gamma
-  current.pars[['peak.sigmas']][new.n.peak] = sigma0/gamma
-
-  # calculate components of the acceptance ratio
-  lik.portion = log.likelihood.main(all.data, current.pars)
-
-  # see my notebook for the parameters going into U and the jacobian
-  u.proposal.log.ratio = dnorm(delta, sd=peaksplit.delta.sd, log=TRUE) + dnorm(epsilon, sd=peaksplit.epsilon.sd, log=TRUE) + dnorm(log(gamma), sd=peaksplit.gamma.sd, log=TRUE) 
-  proposal.log.ratio = -u.proposal.log.ratio - log( current.pars$n.peak ) 
-  jacobian.log.ratio = log(  current.pars$peak.sigmas[new.n.peak] )
-  current.pars$loglik = lik.portion
-
-#  print("===")
-#  print("---")
-#  print("===")
-
-  if (accept.test( lik.portion+proposal.log.ratio+jacobian.log.ratio, old.pars$loglik)) {
-    return(list(pars=current.pars, accepted=TRUE))
-  } else {
-    return(list(pars=old.pars, accepted=FALSE))
-  }
-
-}
-
 
   
 
@@ -1004,16 +586,6 @@ accept.test = function(lik.trial, lik.cur, current.pars) {
   }
 }
 
-sim.data = function(all.locs, all.homologies, all.pars) {
-  # generate a simulated data set using the current parameters
-  all.modes = calc.mode.vals(all.locs, all.pars)
-  all.sds = calc.sd.vals(all.homologies, all.pars)
-
-  sim.standard.scores = rt(length(all.locs), df=all.pars$nu)
-  sim.scores = (sim.standard.scores * all.sds) + all.modes
-
-  return(sim.scores)
-}
   
 dt.nstd = function( locs, means, stds, nu , log) {
   # return the T density function at a given set of points
