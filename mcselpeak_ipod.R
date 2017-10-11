@@ -115,7 +115,13 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
     pars.init[['deltaG']] = rep(4,pars.init$tf.num)
 
     ### mismatch energy
-    pars.init[['mismatch']] = rep(4,pars.init$tf.num)
+    pars.init[['mismatch']] = rep(.4,pars.init$tf.num)
+
+    ### motif
+    raw.bases = sample(bases.vector, READING.FRAME.LENGTH*pars.init$tf.num)
+    for(i = 0, i < pars.init$tf.num, i++){
+	    pars.init[['motif']][i] = paste(raw.bases[(i*READING.FRAME.LENGTH+1):((i+1)*READING.FRAME.LENGTH)], collapse = "")
+    }  
 
     ## for the background
 
@@ -153,8 +159,8 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
 
   png('init.png')
   plot(input.data$loc, input.data$data)
-  points(input.data$loc, calc.mode.vals(input.data$loc, pars.init), col='red')
-  points(current.pars$peak.mus, current.pars$peak.heights, col='black', bg='green', pch=21)
+  points(input.data$loc, generate.waveform(input.data$loc, pars.init), col='red')
+  #points(current.pars$peak.mus, current.pars$peak.heights, col='black', bg='green', pch=21)
   dev.off()
 
   for (iter in 1:n.iter) {
@@ -163,11 +169,12 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
       print(paste("working on iter", iter))
       plot(input.data$loc, input.data$data)
       #points(input.data$loc, calc.mode.vals(input.data$loc, pars.init), col='red')
-      lines(input.data$loc, calc.mode.vals(input.data$loc, current.pars), col='blue')
-      if (current.pars$n.peak > 0) {
-        print(current.pars$peak.mus)
-        print(current.pars$peak.heights)
-        points(current.pars$peak.mus, current.pars$peak.heights, col='black', bg='green', pch=21)
+      lines(input.data$loc, generate.waveform(input.data$loc, current.pars), col='blue')
+      if (current.pars$tf.num > 0) {
+        print(current.pars$deltaG)
+        print(current.pars$mismatch)
+	print(current.pars$
+        #points(current.pars$peak.mus, current.pars$peak.heights, col='black', bg='green', pch=21)
       }
       dev.off()
     }
@@ -441,7 +448,7 @@ change.peak.width = function(all.data, current.pars) {
   }
 }
 
-do.deltaG.move = function(all.data,this.sequence, current.pars) {
+do.deltaG.move = function(all.data, current.pars) {
 
 	old.pars = current.pars;
 	
@@ -464,7 +471,7 @@ do.deltaG.move = function(all.data,this.sequence, current.pars) {
 	
 }
 
-do.mismatch.move = function(all.data, this.sequence, current.pars) {
+do.mismatch.move = function(all.data, current.pars) {
 
         old.pars = current.pars;
 
@@ -487,13 +494,19 @@ do.mismatch.move = function(all.data, this.sequence, current.pars) {
 
 }
 
-do.motif.move = function(all.data, this.sequence, current.pars) {
+do.motif.move = function(all.data, current.pars) {
 
         old.pars = current.pars;
 
         this.motif = sample.int(current.pars$num.tfs, size = 1)
+	
+	motif.vector = strsplit(old.pars$motif[this.motif])
 
-        current.pars$motif[this.motif] = sample(bases.vector, size = 1)
+	base.change = sample.int(READING.FRAME.LENGTH, size = 1)
+	
+	motif.vector[base.change] = sample(bases.vector, size = 1)
+
+        current.pars$motif[this.motif] = paste(motif.vector, collapse = "")
 
         current.pars$loglik = log.likelihood.main(all.data, current.pars)
 
