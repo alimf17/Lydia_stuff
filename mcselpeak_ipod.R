@@ -15,7 +15,7 @@ library(DierckxSpline)
 #GENOME.LENGTH = 4639675
 GENOME.LENGTH = 4000
 #GENOME.LENGTH = 1000
-NUM.MOVE.TYPES = 13
+NUM.MOVE.TYPES = 7
 READING.FRAME.LENGTH = 15
 R = 1.98858775 #Uses kcal/(K*mol)
 temperature = 298 #Kelvin
@@ -106,13 +106,16 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
     pars.init['step'] = 0
    
     ## number of tfs: note that this will be altered when we change over to reversible jump MCMC
-    pars.init[['tf.num']] = tf.lambda
+    pars.init['tf.num'] = tf.lambda
 
     ### peak widths
     pars.init[['peak.sigmas']] = rep(75,pars.init$tf.num)
 
     ### tf binding energies
     pars.init[['deltaG']] = rep(4,pars.init$tf.num)
+
+    ### mismatch energy
+    pars.init[['mismatch']] = rep(4,pars.init$tf.num)
 
     ## for the background
 
@@ -294,7 +297,7 @@ generate.waveform = function(this.locs, this.sequence, all.pars, this.mu, this.l
 		
 		for(j %in% 1:length(this.locs)){
 		
-			waveform[j] = waveform[j]+sum(peak.coeffs*dnorm[this.locs[j], mean = (i+7), sd = sqrt(widths)])
+			waveform[j] = waveform[j]+sum(peak.coeffs*dnorm[(i+7)+genome.dist(i+7,this.locs[j]), mean = (i+7), sd = sqrt(widths)])
 
 		}
 	}	
@@ -376,14 +379,9 @@ d.nu.prior = function(this.nu) {
 d.prior = function(all.data, all.pars) {
   retval=0
 
-  if (all.pars$n.peak > 0) {
-    for (i in 1:all.pars$n.peak) {
-      retval = retval + d.peak.center.prior(all.data, all.pars$peak.mus[i]) + d.peak.sigma.prior(all.pars$peak.sigmas[i]) + d.peak.height.prior(all.pars$peak.heights[i])
-    }
-  }
 
 
-  retval = retval + d.n.peak.prior(all.pars$n.peak) + d.mu0.prior(all.pars$mu0) + d.sigma.base.prior(all.pars$sigma.base) + d.sigma.divergence.prior(all.pars$sigma.divergence.r) + d.nu.prior(all.pars$nu)
+  retval = retval + d.energy.prior(all.pars$deltaG) + d.mu0.prior(all.pars$mu0) + d.sigma.base.prior(all.pars$sigma.base) + d.peak.sigma.prior(all.pars$peak.sigma) + d.peak.mismatch + d.nu.prior(all.pars$nu)
 
   return(retval)
 }
@@ -400,7 +398,7 @@ log.likelihood.main = function(all.data, all.pars) {
 
   # calculate some needed quantities using the helper functions below
   # these are the parameters of the distribution we want to model at each probe
-  all.modes = calc.mode.vals(all.locs, all.pars)
+  all.modes = generate.waveform(all.locs, all.pars)
 
   # standardize the current values so I can use the standard t distribution
   standard.scores = (all.scores - all.modes)/all.sds
@@ -620,12 +618,10 @@ do.move = function(all.data, current.pars, dens.spline.fit, dens.spline.norm) {
     #   move.type: the integer code for the move type
     #   accepted: flag of whether or not the move was accepted
 
-    peak.jump.weight=0.2
-    peak.birthdeath.weight=0.2
-    peak.mergesplit.weight=0.1
-    basic.move.weight = (1.0 - (peak.jump.weight + 2*peak.birthdeath.weight + 2*peak.mergesplit.weight))/8.0
-
-    move.weights = c(basic.move.weight, basic.move.weight, basic.move.weight, basic.move.weight, basic.move.weight, basic.move.weight, basic.move.weight, basic.move.weight, peak.jump.weight, peak.birthdeath.weight, peak.birthdeath.weight, peak.mergesplit.weight, peak.mergesplit.weight)
+	
+    basic.move.weight = 1/(NUM.MOVE.TYPES)
+	
+    move.weights = rep(base.move.weight,NUM.MOVE.TYPES)
 
     # first generate a move, and test its acceptance
     this.move = sample.int(NUM.MOVE.TYPES, size=1, prob=move.weights)
@@ -634,9 +630,9 @@ do.move = function(all.data, current.pars, dens.spline.fit, dens.spline.norm) {
     # each of these move types returns a list with the updated parameters and
     #  an "accepted" field for whether or not the move was accepted
    
-    ## 1: move a peak center 
+    ## 1: change a TF energy 
     if (this.move == 1) {
-      new.pars = do.peak.move(all.data, current.pars)
+      new.pars = do.deltaG.move(all.data, current.pars)
     }
 
     ## 2: change a peak width
@@ -646,12 +642,12 @@ do.move = function(all.data, current.pars, dens.spline.fit, dens.spline.norm) {
 
     ## 3: flip a peak
     if (this.move == 3) {
-      new.pars = flip.peak(all.data, current.pars)
+      new.pars = do.mismatch.move(all.data, current.pars)
     }
 
     ## 4: rescale a peak
     if (this.move == 4) {
-      new.pars = rescale.peak(all.data, current.pars)
+      new.pars = do.motif.move(all.data, current.pars)
     }
 
     ## 5: change background mean
@@ -664,40 +660,11 @@ do.move = function(all.data, current.pars, dens.spline.fit, dens.spline.norm) {
       new.pars = change.sigma.base(all.data, current.pars)
     }
 
-    ## 7: change divergence r parameter
+    ## 7: change nu
     if (this.move == 7) {
-      new.pars = change.sigma.divergence.r(all.data, current.pars)
-    }
-
-    ## 8: change nu
-    if (this.move == 8) {
       new.pars = change.nu(all.data, current.pars)
     }
 
-    ## 9: do a peak jump
-    if (this.move == 9) {
-      new.pars = jump.peak(all.data, current.pars, dens.spline.fit, dens.spline.norm)
-    }
-
-    ## 10: try to add a peak
-    if (this.move == 10) {
-      new.pars = peak.birth(all.data, current.pars)
-    }
-
-    ## 11: try to remove a peak
-    if (this.move == 11) {
-      new.pars = peak.death(all.data, current.pars)
-    }
-
-    ## 12: try a peak merge move
-    if (this.move == 12) {
-      new.pars = peak.merge(all.data, current.pars)
-    }
-
-    ## 13: try a peak split move
-    if (this.move == 13) {
-      new.pars= peak.split(all.data, current.pars)
-    }
 
     #print(this.move)
     #print(new.pars)
@@ -708,9 +675,9 @@ do.move = function(all.data, current.pars, dens.spline.fit, dens.spline.norm) {
 make.pars.printable=function(pars) {
   # create a version of pars that can be included in a data frame
   print.pars = pars
-  print.pars[['peak.mus']] = paste(print.pars$peak.mus, collapse=';')
+  print.pars[['deltaG']] = paste(print.pars$deltaG, collapse=';')
   print.pars[['peak.sigmas']] = paste(print.pars$peak.sigmas, collapse=';')
-  print.pars[['peak.heights']] = paste(print.pars$peak.heights, collapse=';')
+  print.pars[['mismatch']] = paste(print.pars$mismatch, collapse=';')
 
   return(print.pars)
 }
@@ -718,9 +685,9 @@ make.pars.printable=function(pars) {
 parse.printed.pars = function(parstring) {
   # invert make.pars.printable to recover the pars list at a given step
   listpars = as.list(parstring)
-  listpars[['peak.mus']] = as.numeric(strsplit(as.character(listpars[['peak.mus']]), ';')[[1]])
+  listpars[['deltaG']] = as.numeric(strsplit(as.character(listpars[['deltaG']]), ';')[[1]])
   listpars[['peak.sigmas']] = as.numeric(strsplit(as.character(listpars[['peak.sigmas']]), ';')[[1]])
-  listpars[['peak.heights']] = as.numeric(strsplit(as.character(listpars[['peak.heights']]), ';')[[1]])
+  listpars[['mismatch']] = as.numeric(strsplit(as.character(listpars[['mismatch']]), ';')[[1]])
   return(listpars)
 }
 
