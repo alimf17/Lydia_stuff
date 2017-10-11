@@ -89,7 +89,8 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
   probelocs = input.data$loc
   probescores = input.data$data
 
-
+  sequence = sanitize.seq(input.seq)
+  
   # set up an approximation of the overall data
   # this is used in proposing peak jumps
   dens.spline.fit = curfit(c(probelocs, GENOME.LENGTH+1), c(abs(probescores), abs(probescores[1])), s=length(probelocs) - sqrt(2*length(probelocs)), periodic=TRUE) 
@@ -134,7 +135,7 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
     ### nu
     pars.init['nu'] = 20
 
-    lik.prv = log.likelihood.main(input.data, pars.init)
+    lik.prv = log.likelihood.main(input.data, sequence, pars.init)
     pars.init['loglik'] = lik.prv
   }
 
@@ -159,7 +160,7 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
 
   png('init.png')
   plot(input.data$loc, input.data$data)
-  points(input.data$loc, generate.waveform(input.data$loc, pars.init), col='red')
+  points(input.data$loc, generate.waveform(input.data$loc, sequence, pars.init), col='red')
   #points(current.pars$peak.mus, current.pars$peak.heights, col='black', bg='green', pch=21)
   dev.off()
 
@@ -169,7 +170,7 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
       print(paste("working on iter", iter))
       plot(input.data$loc, input.data$data)
       #points(input.data$loc, calc.mode.vals(input.data$loc, pars.init), col='red')
-      lines(input.data$loc, generate.waveform(input.data$loc, current.pars), col='blue')
+      lines(input.data$loc, generate.waveform(input.data$loc, sequence, current.pars), col='blue')
       if (current.pars$tf.num > 0) {
         print(current.pars$deltaG)
         print(current.pars$mismatch)
@@ -219,7 +220,6 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
 
 # (alimf) Leaving functions in even if I do not need them per se. Unneeded functions will be marked with a comment
 # on top specifying "Not necessary." Prior functions that will be used will be marked "in use"
-
 #this is the function to sanitize and define the sequence while lining it up to the data
 #Note that if a FASTA file contains multiple sequences, this function will ignore the the sequences that come after
 #the first one
@@ -254,7 +254,7 @@ sanitize.seq = function(input.seq) {
 
 #This is the function that generates the peak waveform we need to work with
 
-generate.waveform = function(this.locs, this.sequence, all.pars, this.mu, this.locs) {
+generate.waveform = function(this.locs, this.sequence, all.pars) {
 	
 	#frame.matrix generates the list of sequence frame	
 	frame.matrix = this.sequence[1:(length(this.sequence)-(READING.FRAME.LENGTH-1))]
@@ -309,7 +309,7 @@ generate.waveform = function(this.locs, this.sequence, all.pars, this.mu, this.l
 		}
 	}	
 
-	return(this.mu+waveform)
+	return(allpars['mu0']+waveform)
 }
 
 
@@ -398,14 +398,14 @@ d.prior = function(all.data, all.pars) {
 # Now, the likelihood function
 # here we plug in the data and current parameters and get back the density
 # the likelihood is decomposed into several smaller functions to make it more manageable  
-log.likelihood.main = function(all.data, all.pars) {
+log.likelihood.main = function(all.data, sequence, all.pars) {
   # return the log-likelihood of the observed scores given the current parameters
   all.locs = all.data$loc
   all.scores = all.data$data
 
   # calculate some needed quantities using the helper functions below
   # these are the parameters of the distribution we want to model at each probe
-  all.modes = generate.waveform(all.locs, all.pars)
+  all.modes = generate.waveform(all.locs, sequence, all.pars)
 
   # standardize the current values so I can use the standard t distribution
   standard.scores = (all.scores - all.modes)/all.sds
@@ -431,7 +431,7 @@ log.likelihood.main = function(all.data, all.pars) {
 ########################## DIFFERENT MONTE CARLO MOVE TYPES #########################
 
 
-change.peak.width = function(all.data, current.pars) {
+change.peak.width = function(all.data, sequence, current.pars) {
   # attempt  to change peak width
 
   old.pars = current.pars
@@ -439,7 +439,7 @@ change.peak.width = function(all.data, current.pars) {
   this.peak = sample.int(current.pars$n.peak, size=1)
   move.dist = rnorm(1,sd=peak.size.change.sigma)
   current.pars$peak.sigmas[this.peak] = (current.pars$peak.sigmas[this.peak]+move.dist)
-  current.pars$loglik = log.likelihood.main(all.data, current.pars)
+  current.pars$loglik = log.likelihood.main(all.data, sequence, current.pars)
 
   if (accept.test(current.pars$loglik, old.pars$loglik)) {
     return(list(pars = current.pars, accepted = TRUE))
@@ -448,7 +448,7 @@ change.peak.width = function(all.data, current.pars) {
   }
 }
 
-do.deltaG.move = function(all.data, current.pars) {
+do.deltaG.move = function(all.data, sequence, current.pars) {
 
 	old.pars = current.pars;
 	
@@ -461,7 +461,7 @@ do.deltaG.move = function(all.data, current.pars) {
 
 	current.pars$deltaG[this.deltaG] = new.deltaG
 
-	current.pars$loglik = log.likelihood.main(all.data, current.pars)
+	current.pars$loglik = log.likelihood.main(all.data, sequence, current.pars)
 
 	if (accept.test(current.pars$loglik, old.pars$loglik)) {
     		return(list(pars = current.pars, accepted = TRUE))
@@ -471,7 +471,7 @@ do.deltaG.move = function(all.data, current.pars) {
 	
 }
 
-do.mismatch.move = function(all.data, current.pars) {
+do.mismatch.move = function(all.data, sequence, current.pars) {
 
         old.pars = current.pars;
 
@@ -484,7 +484,7 @@ do.mismatch.move = function(all.data, current.pars) {
 
         current.pars$mismatch[this.mistmatch] = new.mismatch
 
-        current.pars$loglik = log.likelihood.main(all.data, current.pars)
+        current.pars$loglik = log.likelihood.main(all.data, sequence, current.pars)
 
         if (accept.test(current.pars$loglik, old.pars$loglik)) {
                 return(list(pars = current.pars, accepted = TRUE))
@@ -494,7 +494,7 @@ do.mismatch.move = function(all.data, current.pars) {
 
 }
 
-do.motif.move = function(all.data, current.pars) {
+do.motif.move = function(all.data, sequence, current.pars) {
 
         old.pars = current.pars;
 
@@ -508,7 +508,7 @@ do.motif.move = function(all.data, current.pars) {
 
         current.pars$motif[this.motif] = paste(motif.vector, collapse = "")
 
-        current.pars$loglik = log.likelihood.main(all.data, current.pars)
+        current.pars$loglik = log.likelihood.main(all.data, sequence, current.pars)
 
         if (accept.test(current.pars$loglik, old.pars$loglik)) {
                 return(list(pars = current.pars, accepted = TRUE))
@@ -519,14 +519,14 @@ do.motif.move = function(all.data, current.pars) {
 }
 
     
-change.background.mu = function(all.data, current.pars) {
+change.background.mu = function(all.data, sequence, current.pars) {
   # try to change the background mean
   old.pars = current.pars
 
   move.dist = rnorm(1,sd=mu0.change.sigma)
   current.pars$mu0 = current.pars$mu0 + move.dist
 
-  current.pars$loglik = log.likelihood.main(all.data, current.pars)
+  current.pars$loglik = log.likelihood.main(all.data, sequence, current.pars)
 
   if (accept.test(current.pars$loglik, old.pars$loglik)) {
     return(list(pars = current.pars, accepted = TRUE))
@@ -535,14 +535,14 @@ change.background.mu = function(all.data, current.pars) {
   }
 }
 
-change.sigma.base = function(all.data, current.pars) {
+change.sigma.base = function(all.data, sequence, current.pars) {
   # try to change the background mean
   old.pars = current.pars
 
   move.dist = rnorm(1,sd=sigma.base.change.sigma)
   current.pars$sigma.base = current.pars$sigma.base + move.dist
 
-  current.pars$loglik = log.likelihood.main(all.data, current.pars)
+  current.pars$loglik = log.likelihood.main(all.data, sequence, current.pars)
 
   if (accept.test(current.pars$loglik, old.pars$loglik)) {
     return(list(pars = current.pars, accepted = TRUE))
@@ -552,14 +552,14 @@ change.sigma.base = function(all.data, current.pars) {
 }
   
   
-change.nu = function(all.data, current.pars) {
+change.nu = function(all.data, sequence, current.pars) {
   # try to change the degrees of freedom in the background distribution
   old.pars = current.pars
 
   move.dist = rnorm(1,sd=nu.change.sigma)
   current.pars$nu = current.pars$nu + move.dist
 
-  current.pars$loglik = log.likelihood.main(all.data, current.pars)
+  current.pars$loglik = log.likelihood.main(all.data, sequence, current.pars)
 
   if (accept.test(current.pars$loglik, old.pars$loglik)) {
     return(list(pars = current.pars, accepted = TRUE))
@@ -622,7 +622,7 @@ stan.z = function(x, mu, tau, nu) {
   return( sqrt( nu * (tau^(1-nu) - 1) + (tau^(-1*(nu+1)) * (x-mu)^2) ) )
 }
 
-do.move = function(all.data, current.pars, dens.spline.fit, dens.spline.norm) {
+do.move = function(all.data, sequence, current.pars, dens.spline.fit, dens.spline.norm) {
     # this function attempts a move of an appropriately chosen type,
     # tests for acceptance, and then returns the parameter vector for the next
     # set based on this test
@@ -645,37 +645,37 @@ do.move = function(all.data, current.pars, dens.spline.fit, dens.spline.norm) {
    
     ## 1: change a TF energy 
     if (this.move == 1) {
-      new.pars = do.deltaG.move(all.data, current.pars)
+      new.pars = do.deltaG.move(all.data, sequence, current.pars)
     }
 
     ## 2: change a peak width
     if (this.move == 2) {
-      new.pars = change.peak.width(all.data, current.pars)
+      new.pars = change.peak.width(all.data, sequence, current.pars)
     }
 
     ## 3: flip a peak
     if (this.move == 3) {
-      new.pars = do.mismatch.move(all.data, current.pars)
+      new.pars = do.mismatch.move(all.data, sequence, current.pars)
     }
 
     ## 4: rescale a peak
     if (this.move == 4) {
-      new.pars = do.motif.move(all.data, current.pars)
+      new.pars = do.motif.move(all.data, sequence, current.pars)
     }
 
     ## 5: change background mean
     if (this.move == 5) {
-      new.pars = change.background.mu(all.data, current.pars)
+      new.pars = change.background.mu(all.data, sequence, current.pars)
     }
 
     ## 6: change background sigma
     if (this.move == 6) {
-      new.pars = change.sigma.base(all.data, current.pars)
+      new.pars = change.sigma.base(all.data, sequence, current.pars)
     }
 
     ## 7: change nu
     if (this.move == 7) {
-      new.pars = change.nu(all.data, current.pars)
+      new.pars = change.nu(all.data, sequence, current.pars)
     }
 
 
