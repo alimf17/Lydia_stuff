@@ -13,7 +13,7 @@ library(DierckxSpline)
 
 #some universal constants
 #GENOME.LENGTH = 4639675
-GENOME.LENGTH = 4000
+GENOME.LENGTH = 4085
 #GENOME.LENGTH = 1000
 NUM.MOVE.TYPES = 7
 READING.FRAME.LENGTH = 15
@@ -50,7 +50,7 @@ bases.vector = c("A","T","G","C","R","Y","W","S","M","K","B","V","H","D","N")
 #In first implementation, tf.lamda will stand for static number of TFs.
 #In later implementations, this will be shifted to a Poisson distribution with 
 #tf.lamda as the Poisson variable
-tf.lamda = 100
+tf.lambda = 100
 
 # v1 -- here we assume a fixed number of peaks and just have to fit their locations
 # the background is independent student-t distributed, with a common mean for all elements
@@ -119,9 +119,9 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
     pars.init[['mismatch']] = rep(.4,pars.init$tf.num)
 
     ### motif
-    raw.bases = sample(bases.vector, READING.FRAME.LENGTH*pars.init$tf.num)
-    for(i = 0, i < pars.init$tf.num, i++){
-	    pars.init[['motif']][i] = paste(raw.bases[(i*READING.FRAME.LENGTH+1):((i+1)*READING.FRAME.LENGTH)], collapse = "")
+    raw.bases = sample(bases.vector, READING.FRAME.LENGTH*pars.init$tf.num, replace = TRUE)
+    for(i in 0:(pars.init$tf.num-1)){
+	    pars.init[['motif']][i+1] = paste(raw.bases[(i*READING.FRAME.LENGTH+1):((i+1)*READING.FRAME.LENGTH)], collapse = "")
     }  
 
     ## for the background
@@ -174,7 +174,7 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
       if (current.pars$tf.num > 0) {
         print(current.pars$deltaG)
         print(current.pars$mismatch)
-	print(current.pars$
+	print(current.pars$motif)
         #points(current.pars$peak.mus, current.pars$peak.heights, col='black', bg='green', pch=21)
       }
       dev.off()
@@ -236,16 +236,16 @@ sanitize.seq = function(input.seq) {
 
 	raw.sequence = raw.read[2]
 
-	sequence.vector =  unlist(strsplit(raw.sequence,''))
+	raw.sequence.vector =  unlist(strsplit(raw.sequence,''))
 
-	is.acceptable.bp = sequence.vector %in% c('A','T','G','C')
+	is.acceptable.bp = raw.sequence.vector %in% c('A','T','G','C')
 
 	if(!all(is.acceptable.bp)){
 		stop('Sequences must only have base pairs A, T,G,C. No other base pairs are allowed.')
 	}
 
 	#This circularizes the genome. We will edit as neccesary
-	sequence.vector = c(sequence.vector, sequence.vector[1, READING.FRAME.LENGTH-1])
+	sequence.vector = c(raw.sequence.vector, raw.sequence.vector[1:(READING.FRAME.LENGTH-1)])
 
 	return(sequence.vector)
 
@@ -257,10 +257,10 @@ sanitize.seq = function(input.seq) {
 generate.waveform = function(this.locs, this.sequence, all.pars) {
 	
 	#frame.matrix generates the list of sequence frame	
-	frame.matrix = this.sequence[1:(length(this.sequence)-(READING.FRAME.LENGTH-1))]
-	for(i %in% 2:READING.FRAME.LENGTH){
+	frame.matrix = matrix(this.sequence[1:(length(this.sequence)-(READING.FRAME.LENGTH-1))], ncol = 1)
+	for(i in 2:READING.FRAME.LENGTH){
 		
-		frame.matrix = cbind(frame.matrix,this.sequence[i:(length(this.sequence)-(READING.FRAME.LENGTH-1)+i)]
+		frame.matrix = cbind(frame.matrix,this.sequence[i:(length(this.sequence)-(READING.FRAME.LENGTH-1)+i-1)])
 	
 	}
 	
@@ -270,7 +270,7 @@ generate.waveform = function(this.locs, this.sequence, all.pars) {
 	#This makes a list. This new list is unlisted, which makes a vector of characters
 	#We need this vector to be a matrix with 15 columns, and each row contains the current sequnce for the TF.
 	#But, r fills matrices down columns, so we make the matrix with reading frames going down, then transpose
-	sequence.motifs = t(matrix(unlist(strsplit(unlist(mag.pars$motif),"")), nrows = READING.FRAME.LENGTH))
+	sequence.motifs = t(matrix(unlist(strsplit(unlist(mag.pars$motif),"")), nrow = READING.FRAME.LENGTH))
 	
 
         mismatch = unlist(all.pars$mismatch)
@@ -281,12 +281,14 @@ generate.waveform = function(this.locs, this.sequence, all.pars) {
 
 
 	#Iterates through every readin frame and determines the contribution of that reading frame to the overall wave
-	for(i %in% 1:(length(this.sequence)-READING.FRAME.LENGTH)){
+	for(i in 1:(length(this.sequence)-READING.FRAME.LENGTH)){
 		
 		#energy is redefined every iteration because it's subtracted off thanks to mismatches
 		energy = unlist(all.pars$deltaG)
 		
-		is.mismatch = !match((sequence.motifs,frame.matrix[i,]))
+		current.frame = frame.matrix[i,]
+			
+		is.mismatch = !(match(current.frame, sequence.motifs))
 		
 		#Exploits TRUE == 1 to get number of mismatches for each frame comparing to sequence motif
 		number.mismatches = rowSums(is.mismatch)
@@ -302,9 +304,9 @@ generate.waveform = function(this.locs, this.sequence, all.pars) {
 		
 		location.means = (1:(length(this.sequence)-(READING.FRAME.LENGTH-1))+READING.FRAME.LENGTH:length(this.sequence))/2
 		
-		for(j %in% 1:length(this.locs)){
+		for(j in 1:length(this.locs)){
 		
-			waveform[j] = waveform[j]+sum(peak.coeffs*dnorm[(i+7)+genome.dist(i+7,this.locs[j]), mean = (i+7), sd = sqrt(widths)])
+			waveform[j] = waveform[j]+sum(peak.coeffs*dnorm[(i+8)+genome.dist(i+8,this.locs[j]), mean = (i+8), sd = sqrt(widths)])
 
 		}
 	}	
@@ -341,23 +343,26 @@ d.peak.sigma.prior = function(this.sigma) {
 
 }
 
-match = function(data, template) {
+match = function(sequence.frames, motif) {
 
-	if(data == "A") {
-		return(template %in% c("A","R","W","M","V","H","D","N"))
-	}
-	else if(data == "T") {
-		return(template %in% c("T","Y","W","K","B","H","D","N"))
-	}
-	else if(data == "G") {
-		return(template %in% c("G","R","S","K","B","V","D","N"))
-	}
-	else if(data == "C") {
-		return(template %in% c("C","Y","S","M","B","V","H","N"))
-	}
-	else{
-		return(false)
-	}
+	isA = (sequence.frames == "A")
+	matchA = motif %in% c("A","R","W","M","V","H","D","N")
+	Amatches = (isA & matchA)
+
+	isT = (sequence.frames == "T") 
+	matchT = motif %in% c("T","Y","W","K","B","H","D","N")
+	Tmatches = (isT & matchT)
+
+	isG = (sequence.frames == "G")
+	matchG = motif %in% c("G","R","S","K","B","V","D","N")
+	Gmatches = (isG & matchG)
+	
+
+	isC = (sequence.frames == "C")
+	matchC = motif %in% c("C","Y","S","M","B","V","H","N")
+	Cmatches = (isC & matchC)
+
+	return (Amatches+Tmatches+Gmatches+Cmatches)	
 
 }
 
@@ -436,7 +441,7 @@ change.peak.width = function(all.data, sequence, current.pars) {
 
   old.pars = current.pars
 
-  this.peak = sample.int(current.pars$n.peak, size=1)
+  this.peak = sample.int(current.pars$n.peak, size=1,replace = TRUE)
   move.dist = rnorm(1,sd=peak.size.change.sigma)
   current.pars$peak.sigmas[this.peak] = (current.pars$peak.sigmas[this.peak]+move.dist)
   current.pars$loglik = log.likelihood.main(all.data, sequence, current.pars)
@@ -452,7 +457,7 @@ do.deltaG.move = function(all.data, sequence, current.pars) {
 
 	old.pars = current.pars;
 	
-	this.deltaG = sample.int(current.pars$num.tfs, size = 1)
+	this.deltaG = sample.int(current.pars$num.tfs, size = 1,replace = TRUE)
 	
 
 	move.dist = rnorm(1,sd = deltaG.move.sigma)
@@ -475,7 +480,7 @@ do.mismatch.move = function(all.data, sequence, current.pars) {
 
         old.pars = current.pars;
 
-        this.mismatch = sample.int(current.pars$num.tfs, size = 1)
+        this.mismatch = sample.int(current.pars$num.tfs, size = 1, replace = TRUE)
 
 
         move.dist = rnorm(1,sd = mismatch.move.sigma)
@@ -498,13 +503,13 @@ do.motif.move = function(all.data, sequence, current.pars) {
 
         old.pars = current.pars;
 
-        this.motif = sample.int(current.pars$num.tfs, size = 1)
+        this.motif = sample.int(current.pars$num.tfs, size = 1, replace = TRUE)
 	
 	motif.vector = strsplit(old.pars$motif[this.motif])
 
-	base.change = sample.int(READING.FRAME.LENGTH, size = 1)
+	base.change = sample.int(READING.FRAME.LENGTH, size = 1, replace = TRUE)
 	
-	motif.vector[base.change] = sample(bases.vector, size = 1)
+	motif.vector[base.change] = sample(bases.vector, size = 1, replace = TRUE)
 
         current.pars$motif[this.motif] = paste(motif.vector, collapse = "")
 
@@ -637,7 +642,7 @@ do.move = function(all.data, sequence, current.pars, dens.spline.fit, dens.splin
     move.weights = rep(base.move.weight,NUM.MOVE.TYPES)
 
     # first generate a move, and test its acceptance
-    this.move = sample.int(NUM.MOVE.TYPES, size=1, prob=move.weights)
+    this.move = sample.int(NUM.MOVE.TYPES, size=1, replace = TRUE, prob=move.weights)
     #this.move = 1
     
     # each of these move types returns a list with the updated parameters and
