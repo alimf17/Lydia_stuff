@@ -38,7 +38,7 @@ mismatch.prior.scale = 0.8
 
 ##Prior for Peak Width
 peak.sigma.shape = 1000
-peak.sigma.size = 0.1
+peak.sigma.scale = 0.1
 
 
 ##Vector of bases to choose from
@@ -50,7 +50,7 @@ bases.vector = c("A","T","G","C","R","Y","W","S","M","K","B","V","H","D","N")
 #In first implementation, tf.lamda will stand for static number of TFs.
 #In later implementations, this will be shifted to a Poisson distribution with 
 #tf.lamda as the Poisson variable
-tf.lambda = 100
+tf.lambda = 1
 
 # v1 -- here we assume a fixed number of peaks and just have to fit their locations
 # the background is independent student-t distributed, with a common mean for all elements
@@ -108,7 +108,7 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
    
     ## number of tfs: note that this will be altered when we change over to reversible jump MCMC
     pars.init['tf.num'] = tf.lambda
-
+   
     ### peak widths
     pars.init[['peak.sigmas']] = rep(75,pars.init$tf.num)
 
@@ -179,7 +179,7 @@ mcmc.adam.peak.v1 = function(input.data, input.seq, n.iter, pars.init=NULL, spar
       }
       dev.off()
     }
-    new.par.list = do.move(input.data,current.pars, dens.spline.fit, dens.spline.norm)
+    new.par.list = do.move(input.data, sequence, current.pars, dens.spline.fit, dens.spline.norm)
     current.pars = new.par.list$pars
     move.type = new.par.list$move.type
     n.attempt.movetype[move.type] = n.attempt.movetype[move.type] + 1
@@ -256,8 +256,11 @@ sanitize.seq = function(input.seq) {
 
 generate.waveform = function(this.locs, this.sequence, all.pars) {
 	
-	#frame.matrix generates the list of sequence frame	
-	frame.matrix = matrix(this.sequence[1:(length(this.sequence)-(READING.FRAME.LENGTH-1))], ncol = 1)
+	#frame.matrix generates the list of sequence frame
+	
+	before.circle.length = length(this.sequence)-(READING.FRAME.LENGTH-1)
+	
+	frame.matrix = matrix(this.sequence[1:before.circle.length], ncol = 1)
 	for(i in 2:READING.FRAME.LENGTH){
 		
 		frame.matrix = cbind(frame.matrix,this.sequence[i:(length(this.sequence)-(READING.FRAME.LENGTH-1)+i-1)])
@@ -275,8 +278,8 @@ generate.waveform = function(this.locs, this.sequence, all.pars) {
 
         mismatch = unlist(all.pars$mismatch)
 
-        widths = unlist(all.pars$widths)
-	
+        widths = unlist(all.pars$peak.sigmas)
+
 	waveform = numeric(length(this.locs))
 
 
@@ -286,10 +289,12 @@ generate.waveform = function(this.locs, this.sequence, all.pars) {
 		#energy is redefined every iteration because it's subtracted off thanks to mismatches
 		energy = unlist(all.pars$deltaG)
 		
-		current.frame = frame.matrix[i,]
-			
-		is.mismatch = !(match(current.frame, sequence.motifs))
-		
+		current.frame = frame.matrix[i,]		
+	
+		mismatches = !(match(current.frame, sequence.motifs))
+	
+		is.mismatch = matrix(mismatches, nrow = all.pars$tf.num)
+	
 		#Exploits TRUE == 1 to get number of mismatches for each frame comparing to sequence motif
 		number.mismatches = rowSums(is.mismatch)
 
@@ -300,18 +305,18 @@ generate.waveform = function(this.locs, this.sequence, all.pars) {
 		#This eliminates any attempt at peaks that don't really contribute to the waveform
 		peak.heights[peak.heights <= 1] = 0
 
-		peak.coeffs = peakheights*sqrt(2*pi*widths)
+		peak.coeffs = peak.heights*sqrt(2*pi*widths)
 		
 		location.means = (1:(length(this.sequence)-(READING.FRAME.LENGTH-1))+READING.FRAME.LENGTH:length(this.sequence))/2
 		
 		for(j in 1:length(this.locs)){
 		
-			waveform[j] = waveform[j]+sum(peak.coeffs*dnorm[(i+8)+genome.dist(i+8,this.locs[j]), mean = (i+8), sd = sqrt(widths)])
+			waveform[j] = waveform[j]+sum(peak.coeffs*dnorm((i+8)+genome.dist(i+8,this.locs[j]), mean = (i+8), sd = sqrt(widths)))
 
 		}
 	}	
 
-	return(allpars['mu0']+waveform)
+	return(unlist(all.pars['mu0'])+waveform)
 }
 
 
@@ -362,7 +367,7 @@ match = function(sequence.frames, motif) {
 	matchC = motif %in% c("C","Y","S","M","B","V","H","N")
 	Cmatches = (isC & matchC)
 
-	return (Amatches+Tmatches+Gmatches+Cmatches)	
+	return (Amatches+Tmatches+Gmatches+Cmatches)
 
 }
 
@@ -393,7 +398,7 @@ d.prior = function(all.data, all.pars) {
 
 
 
-  retval = retval + d.energy.prior(all.pars$deltaG) + d.mu0.prior(all.pars$mu0) + d.sigma.base.prior(all.pars$sigma.base) + d.peak.sigma.prior(all.pars$peak.sigma) + d.peak.mismatch + d.nu.prior(all.pars$nu)
+  retval = retval + d.energy.prior(all.pars$deltaG) + d.mu0.prior(all.pars$mu0) + d.sigma.base.prior(all.pars$sigma.base) + d.peak.sigma.prior(all.pars$peak.sigma) + d.mismatch.prior(all.pars$mismatch) + d.nu.prior(all.pars$nu)
 
   return(retval)
 }
@@ -413,7 +418,7 @@ log.likelihood.main = function(all.data, sequence, all.pars) {
   all.modes = generate.waveform(all.locs, sequence, all.pars)
 
   # standardize the current values so I can use the standard t distribution
-  standard.scores = (all.scores - all.modes)/all.sds
+  standard.scores = all.scores - all.modes
 
   #return(d.prior(all.data, all.pars) + sum(dt(standard.scores, df=all.pars$nu, log=TRUE)))
   lik.sum = 0
@@ -424,7 +429,7 @@ log.likelihood.main = function(all.data, sequence, all.pars) {
     #lik.sum = lik.sum + dnorm(standard.scores[i], log=TRUE)
   #}
 
-  lik.sum = sum( dt(standard.scores, df=all.pars$nu, log=TRUE) - log(all.sds) )
+  lik.sum = sum(dt(standard.scores, df=all.pars$nu, log=TRUE))
   
   return(d.prior(all.data, all.pars) + lik.sum)
 }
@@ -440,8 +445,9 @@ change.peak.width = function(all.data, sequence, current.pars) {
   # attempt  to change peak width
 
   old.pars = current.pars
+  
 
-  this.peak = sample.int(current.pars$n.peak, size=1,replace = TRUE)
+  this.peak = sample.int(current.pars$tf.num, size=1,replace = TRUE)
   move.dist = rnorm(1,sd=peak.size.change.sigma)
   current.pars$peak.sigmas[this.peak] = (current.pars$peak.sigmas[this.peak]+move.dist)
   current.pars$loglik = log.likelihood.main(all.data, sequence, current.pars)
@@ -456,8 +462,9 @@ change.peak.width = function(all.data, sequence, current.pars) {
 do.deltaG.move = function(all.data, sequence, current.pars) {
 
 	old.pars = current.pars;
+
 	
-	this.deltaG = sample.int(current.pars$num.tfs, size = 1,replace = TRUE)
+	this.deltaG = sample.int(current.pars$tf.num, size = 1,replace = TRUE)
 	
 
 	move.dist = rnorm(1,sd = deltaG.move.sigma)
@@ -479,15 +486,16 @@ do.deltaG.move = function(all.data, sequence, current.pars) {
 do.mismatch.move = function(all.data, sequence, current.pars) {
 
         old.pars = current.pars;
+	
 
-        this.mismatch = sample.int(current.pars$num.tfs, size = 1, replace = TRUE)
+        this.mismatch = sample.int(current.pars$tf.num, size = 1, replace = TRUE)
 
 
         move.dist = rnorm(1,sd = mismatch.move.sigma)
 
         new.mismatch = current.pars$deltaG[this.mismatch] + move.dist
 
-        current.pars$mismatch[this.mistmatch] = new.mismatch
+        current.pars$mismatch[this.mismatch] = new.mismatch
 
         current.pars$loglik = log.likelihood.main(all.data, sequence, current.pars)
 
@@ -503,15 +511,23 @@ do.motif.move = function(all.data, sequence, current.pars) {
 
         old.pars = current.pars;
 
-        this.motif = sample.int(current.pars$num.tfs, size = 1, replace = TRUE)
+        this.motif = sample.int(current.pars$tf.num, size = 1, replace = TRUE)
 	
-	motif.vector = strsplit(old.pars$motif[this.motif])
+	motif.vector = strsplit(unlist(old.pars$motif[this.motif]),"")
+
+	motif.vector = unlist(motif.vector)
+
+	print(motif.vector)
 
 	base.change = sample.int(READING.FRAME.LENGTH, size = 1, replace = TRUE)
-	
+
 	motif.vector[base.change] = sample(bases.vector, size = 1, replace = TRUE)
 
+	print(motif.vector)
+
         current.pars$motif[this.motif] = paste(motif.vector, collapse = "")
+
+	print(current.pars$motif[this.motif])
 
         current.pars$loglik = log.likelihood.main(all.data, sequence, current.pars)
 
@@ -637,7 +653,7 @@ do.move = function(all.data, sequence, current.pars, dens.spline.fit, dens.splin
     #   accepted: flag of whether or not the move was accepted
 
 	
-    basic.move.weight = 1/(NUM.MOVE.TYPES)
+    base.move.weight = 1/(NUM.MOVE.TYPES)
 	
     move.weights = rep(base.move.weight,NUM.MOVE.TYPES)
 
